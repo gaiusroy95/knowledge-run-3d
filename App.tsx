@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import Phaser from 'phaser';
 import { createGame } from './game/game';
 import { GameUI } from './components/GameUI';
@@ -7,14 +7,22 @@ import { HomeUI } from './components/HomeUI';
 import { HowToPlayUI } from './components/HowToPlayUI';
 import { GameDetailsUI } from './components/GameDetailsUI';
 import { AgeSelectionUI } from './components/AgeSelectionUI';
+import { GameCanvas3D } from './components/GameCanvas3D';
 import { GameState, AgeGroup } from './types';
 import { MainScene } from './game/scenes/MainScene';
 import { HomeScene } from './game/scenes/HomeScene';
+import type { GameWorldHandle } from './game3d/GameWorldHandle';
 
 type GameStatus = 'intro_gate' | 'home' | 'how_to_play' | 'age_select' | 'game_details' | 'loading_play' | 'playing';
+type RenderMode = '2d' | '3d';
+
+const RENDER_MODE: RenderMode =
+  import.meta.env.VITE_RENDER_MODE === '3d' ? '3d' : '2d';
 
 function App() {
   const gameRef = useRef<Phaser.Game | null>(null);
+  const game3dRef = useRef<GameWorldHandle | null>(null);
+  const renderMode = RENDER_MODE;
   const [isLoaded, setIsLoaded] = useState(false);
   const uiButtonAudioRef = useRef<HTMLAudioElement | null>(null);
   const bgmAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -35,49 +43,53 @@ function App() {
     ageGroup: undefined
   });
 
+  const applyGameStateUpdate = useCallback((data: Record<string, unknown>) => {
+    if (data.returnToMenu) {
+      setGameStatus('home');
+      try {
+        (globalThis as any).__kr_bgm?.stop?.();
+      } catch (_) { /* ignore */ }
+      try {
+        const musicDisabled =
+          typeof localStorage !== 'undefined' && localStorage.getItem('musicEnabled') === '0';
+        if (!musicDisabled && menuBgmAudioRef.current) {
+          void menuBgmAudioRef.current.play();
+        }
+      } catch {
+        // ignore
+      }
+    }
+    if (data.currentStage !== undefined) {
+      try { ((globalThis as any).__kr_bgm as any).currentStage = data.currentStage as number; } catch (_) { /* ignore */ }
+    }
+    setGameState(prev => ({
+      ...prev,
+      distance: data.distance !== undefined ? (data.distance as number) : prev.distance,
+      stars: data.stars !== undefined ? (data.stars as number) : prev.stars,
+      hearts: data.hearts !== undefined ? (data.hearts as number) : prev.hearts,
+      isGameOver: data.isGameOver !== undefined ? (data.isGameOver as boolean) : prev.isGameOver,
+      activeQuestion: data.activeQuestion as GameState['activeQuestion'],
+      activeMessage: data.activeMessage as GameState['activeMessage'],
+      noorMessage: data.noorMessage as GameState['noorMessage'],
+      stageResults: data.stageResults as GameState['stageResults'],
+      isHanging: data.isHanging !== undefined ? (data.isHanging as boolean) : prev.isHanging,
+      climbProgress: data.climbProgress !== undefined ? (data.climbProgress as number) : prev.climbProgress,
+      stageProgressPercent: data.stageProgressPercent !== undefined ? (data.stageProgressPercent as number) : prev.stageProgressPercent,
+      currentStage: data.currentStage !== undefined ? (data.currentStage as number) : prev.currentStage,
+      stageTitle: 'stageTitle' in data ? (data.stageTitle as string | null) : prev.stageTitle,
+      soundEnabled: data.soundEnabled !== undefined ? (data.soundEnabled as boolean) : prev.soundEnabled,
+      musicEnabled: data.musicEnabled !== undefined ? (data.musicEnabled as boolean) : prev.musicEnabled,
+      activePuzzle: 'activePuzzle' in data ? (data.activePuzzle as GameState['activePuzzle']) : prev.activePuzzle,
+      isPaused: 'isPaused' in data ? (data.isPaused as boolean) : prev.isPaused
+    }));
+  }, []);
+
   useEffect(() => {
+    if (renderMode !== '2d') return;
     if (gameRef.current) return;
 
     const game = createGame('game-container', (data) => {
-      const d = data as Record<string, unknown>;
-      if (d.returnToMenu) {
-        setGameStatus('home');
-        try {
-          (globalThis as any).__kr_bgm?.stop?.();
-        } catch (_) { /* ignore */ }
-        try {
-          const musicDisabled =
-            typeof localStorage !== 'undefined' && localStorage.getItem('musicEnabled') === '0';
-          if (!musicDisabled && menuBgmAudioRef.current) {
-            void menuBgmAudioRef.current.play();
-          }
-        } catch {
-          // ignore
-        }
-      }
-      if (d.currentStage !== undefined) {
-        try { ((globalThis as any).__kr_bgm as any).currentStage = d.currentStage as number; } catch (_) { /* ignore */ }
-      }
-      setGameState(prev => ({
-        ...prev,
-        distance: d.distance !== undefined ? (d.distance as number) : prev.distance,
-        stars: d.stars !== undefined ? (d.stars as number) : prev.stars,
-        hearts: d.hearts !== undefined ? (d.hearts as number) : prev.hearts,
-        isGameOver: d.isGameOver !== undefined ? (d.isGameOver as boolean) : prev.isGameOver,
-        activeQuestion: d.activeQuestion as GameState['activeQuestion'],
-        activeMessage: d.activeMessage as GameState['activeMessage'],
-        noorMessage: d.noorMessage as GameState['noorMessage'],
-        stageResults: d.stageResults as GameState['stageResults'],
-        isHanging: d.isHanging !== undefined ? (d.isHanging as boolean) : prev.isHanging,
-        climbProgress: d.climbProgress !== undefined ? (d.climbProgress as number) : prev.climbProgress,
-        stageProgressPercent: d.stageProgressPercent !== undefined ? (d.stageProgressPercent as number) : prev.stageProgressPercent,
-        currentStage: d.currentStage !== undefined ? (d.currentStage as number) : prev.currentStage,
-        stageTitle: 'stageTitle' in d ? (d.stageTitle as string | null) : prev.stageTitle,
-        soundEnabled: d.soundEnabled !== undefined ? (d.soundEnabled as boolean) : prev.soundEnabled,
-        musicEnabled: d.musicEnabled !== undefined ? (d.musicEnabled as boolean) : prev.musicEnabled,
-        activePuzzle: 'activePuzzle' in d ? (d.activePuzzle as GameState['activePuzzle']) : prev.activePuzzle,
-        isPaused: 'isPaused' in d ? (d.isPaused as boolean) : prev.isPaused
-      }));
+      applyGameStateUpdate(data as Record<string, unknown>);
     });
 
     gameRef.current = game;
@@ -143,7 +155,55 @@ function App() {
         gameRef.current = null;
       }
     };
-  }, []);
+  }, [renderMode, applyGameStateUpdate]);
+
+  // 3D mode: preload UI/menu audio without Phaser
+  useEffect(() => {
+    if (renderMode !== '3d') return;
+
+    const waitForAudio = (audio: HTMLAudioElement | null): Promise<void> =>
+      new Promise((resolve) => {
+        if (!audio) return resolve();
+        const onReady = () => {
+          audio.removeEventListener('canplaythrough', onReady);
+          audio.removeEventListener('loadeddata', onReady);
+          resolve();
+        };
+        audio.addEventListener('canplaythrough', onReady);
+        audio.addEventListener('loadeddata', onReady);
+        setTimeout(() => {
+          audio.removeEventListener('canplaythrough', onReady);
+          audio.removeEventListener('loadeddata', onReady);
+          resolve();
+        }, 4000);
+        try {
+          audio.load();
+        } catch {
+          resolve();
+        }
+      });
+
+    void (async () => {
+      if (!uiButtonAudioRef.current) {
+        const btn = new Audio('/audio/button.wav');
+        btn.preload = 'auto';
+        btn.volume = 0.6;
+        uiButtonAudioRef.current = btn;
+      }
+      if (!menuBgmAudioRef.current) {
+        const menu = new Audio('/audio/mainMenu.mp3');
+        menu.preload = 'auto';
+        menu.loop = true;
+        menu.volume = 0.28;
+        menuBgmAudioRef.current = menu;
+      }
+      await Promise.all([
+        waitForAudio(uiButtonAudioRef.current),
+        waitForAudio(menuBgmAudioRef.current)
+      ]);
+      setIsLoaded(true);
+    })();
+  }, [renderMode]);
 
   // Global BGM controller (HTMLAudio): Stage 1 = background-music.mp3, Stage 2 = stage2BackgroundMusic.mp3.
   useEffect(() => {
@@ -223,14 +283,17 @@ function App() {
     });
   }, [isLoaded, gameStatus]);
 
-  // When MainScene finishes heavy setup and shows Nur's first intro bubble,
-  // `noorMessage` becomes non-null. Keep the \"PREPARING YOUR ADVENTURE\"
-  // overlay visible until that happens so the player doesn't see a frozen frame.
+  // When game is ready, leave loading screen.
   useEffect(() => {
-    if (gameStatus === 'loading_play' && gameState.noorMessage) {
+    if (gameStatus !== 'loading_play') return;
+    if (renderMode === '3d') {
+      const t = setTimeout(() => setGameStatus('playing'), 300);
+      return () => clearTimeout(t);
+    }
+    if (gameState.noorMessage) {
       setGameStatus('playing');
     }
-  }, [gameStatus, gameState.noorMessage]);
+  }, [gameStatus, gameState.noorMessage, renderMode]);
 
   // Switch BGM track when stage changes during gameplay (Stage 1 vs Stage 2).
   useEffect(() => {
@@ -299,6 +362,11 @@ function App() {
   const handleStartGameClick = () => {
       playUIButton();
 
+      if (renderMode === '3d') {
+          setGameStatus('how_to_play');
+          return;
+      }
+
       if (gameRef.current) {
           const homeScene = gameRef.current.scene.getScene('HomeScene') as HomeScene;
           
@@ -328,9 +396,7 @@ function App() {
   // 4. Game Details -> Playing (show loading while MainScene create() runs)
   const handleGameDetailsNext = () => {
       playUIButton();
-      // Start background music when entering the actual game.
       try {
-        // Stop menu BGM when switching into gameplay.
         if (menuBgmAudioRef.current) {
           menuBgmAudioRef.current.pause();
           try { menuBgmAudioRef.current.currentTime = 0; } catch { /* ignore */ }
@@ -340,7 +406,24 @@ function App() {
         /* ignore */
       }
       setGameStatus('loading_play');
-      // Yield so the "Preparing your adventure..." overlay can paint before blocking create().
+
+      if (renderMode === '3d') {
+        setGameState(prev => ({
+          ...prev,
+          distance: 0,
+          hearts: 3,
+          stars: 0,
+          isGameOver: false,
+          activeQuestion: null,
+          activeMessage: undefined,
+          noorMessage: null,
+          stageResults: undefined,
+          currentStage: 1,
+          isPaused: false,
+        }));
+        return;
+      }
+
       requestAnimationFrame(() => {
         setTimeout(() => {
           if (gameRef.current) {
@@ -354,7 +437,9 @@ function App() {
   const handleRestart = () => {
     playUIButton();
     try { void (globalThis as any).__kr_bgm?.start?.(); } catch (_) { /* ignore */ }
-    if (gameRef.current) {
+    if (renderMode === '3d') {
+      game3dRef.current?.restartStage();
+    } else if (gameRef.current) {
       const scene = gameRef.current.scene.getScene('MainScene');
       if (scene) {
         scene.scene.restart();
@@ -375,7 +460,9 @@ function App() {
   
   const handleNoorAnswer = (isCorrect: boolean) => {
     playUIButton();
-    if (gameRef.current) {
+    if (renderMode === '3d') {
+      game3dRef.current?.resumeGameFromNoor(isCorrect);
+    } else if (gameRef.current) {
         const scene = gameRef.current.scene.getScene('MainScene') as MainScene;
         if (scene) {
             scene.resumeGameFromNoor(isCorrect);
@@ -385,7 +472,9 @@ function App() {
 
   const handleMessageDismiss = () => {
     playUIButton();
-    if (gameRef.current) {
+    if (renderMode === '3d') {
+      game3dRef.current?.dismissMessage();
+    } else if (gameRef.current) {
         const scene = gameRef.current.scene.getScene('MainScene') as MainScene;
         if (scene) {
             scene.dismissMessage();
@@ -395,7 +484,9 @@ function App() {
 
   const handleStageResultsContinue = () => {
     playUIButton();
-    if (gameRef.current) {
+    if (renderMode === '3d') {
+      game3dRef.current?.continueAfterStageResults();
+    } else if (gameRef.current) {
       const scene = gameRef.current.scene.getScene('MainScene') as MainScene;
       if (scene) {
         scene.continueAfterStageResults();
@@ -405,7 +496,9 @@ function App() {
 
   const handleSoundToggle = () => {
     playUIButton();
-    if (gameRef.current) {
+    if (renderMode === '3d') {
+      game3dRef.current?.setSoundEnabled(!(gameState.soundEnabled !== false));
+    } else if (gameRef.current) {
       const scene = gameRef.current.scene.getScene('MainScene') as MainScene;
       if (scene?.setSoundEnabled) scene.setSoundEnabled(!(gameState.soundEnabled !== false));
     }
@@ -413,7 +506,9 @@ function App() {
 
   const handlePuzzleAnswer = (answer: unknown) => {
     playUIButton();
-    if (gameRef.current) {
+    if (renderMode === '3d') {
+      game3dRef.current?.resolvePuzzleAnswer(answer as number | import('./types').PuzzleAnswerPayload);
+    } else if (gameRef.current) {
       const scene = gameRef.current.scene.getScene('MainScene') as MainScene;
       if (scene && typeof (scene as any).resolvePuzzleAnswer === 'function') {
         (scene as any).resolvePuzzleAnswer(answer);
@@ -423,7 +518,9 @@ function App() {
 
   const handleMusicToggle = () => {
     playUIButton();
-    if (gameRef.current) {
+    if (renderMode === '3d') {
+      game3dRef.current?.setMusicEnabled(!(gameState.musicEnabled !== false));
+    } else if (gameRef.current) {
       const scene = gameRef.current.scene.getScene('MainScene') as MainScene;
       if (scene?.setMusicEnabled) scene.setMusicEnabled(!(gameState.musicEnabled !== false));
     }
@@ -431,7 +528,9 @@ function App() {
 
   const handlePauseClick = () => {
     playUIButton();
-    if (gameRef.current) {
+    if (renderMode === '3d') {
+      game3dRef.current?.pauseGame();
+    } else if (gameRef.current) {
       const scene = gameRef.current.scene.getScene('MainScene') as MainScene;
       scene?.pauseGame?.();
     }
@@ -439,7 +538,9 @@ function App() {
 
   const handleResumeClick = () => {
     playUIButton();
-    if (gameRef.current) {
+    if (renderMode === '3d') {
+      game3dRef.current?.resumeGame();
+    } else if (gameRef.current) {
       const scene = gameRef.current.scene.getScene('MainScene') as MainScene;
       scene?.resumeGame?.();
     }
@@ -447,7 +548,22 @@ function App() {
 
   const handleRestartStageClick = () => {
     playUIButton();
-    if (gameRef.current) {
+    if (renderMode === '3d') {
+      game3dRef.current?.restartStage();
+      setGameState((prev) => ({
+        ...prev,
+        distance: 0,
+        hearts: 3,
+        stars: 0,
+        isGameOver: false,
+        activeQuestion: null,
+        activeMessage: undefined,
+        noorMessage: null,
+        stageResults: undefined,
+        isPaused: false,
+        stageProgressPercent: 0,
+      }));
+    } else if (gameRef.current) {
       const scene = gameRef.current.scene.getScene('MainScene') as MainScene;
       scene?.restartStage?.();
     }
@@ -455,7 +571,9 @@ function App() {
 
   const handleReturnToMenuClick = () => {
     playUIButton();
-    if (gameRef.current) {
+    if (renderMode === '3d') {
+      game3dRef.current?.returnToMainMenu();
+    } else if (gameRef.current) {
       const scene = gameRef.current.scene.getScene('MainScene') as MainScene;
       scene?.returnToMainMenu?.();
     }
@@ -464,14 +582,19 @@ function App() {
   // Auto-pause when the user leaves the game (switch tab, minimize, another app). Game does not run in background.
   useEffect(() => {
     const handleVisibilityChange = () => {
-      if (!document.hidden || !gameRef.current) return;
+      if (!document.hidden) return;
+      if (renderMode === '3d') {
+        if (gameStatus === 'playing') game3dRef.current?.pauseGame();
+        return;
+      }
+      if (!gameRef.current) return;
       if (!gameRef.current.scene.isActive('MainScene')) return;
       const scene = gameRef.current.scene.getScene('MainScene') as MainScene | undefined;
       if (scene?.pauseGame && typeof scene.pauseGame === 'function') scene.pauseGame();
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, []);
+  }, [renderMode, gameStatus]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -486,10 +609,24 @@ function App() {
     };
   }, [gameState.isGameOver]);
 
+  const game3dGameplayActive =
+    renderMode === '3d' && (gameStatus === 'loading_play' || gameStatus === 'playing');
+
   return (
     <div className="relative w-full h-screen bg-[#1a1625] overflow-hidden select-none touch-none">
-       {/* Game Container */}
-      <div id="game-container" className="absolute inset-0 z-0" />
+       {/* 2D Phaser canvas */}
+      {renderMode === '2d' && (
+        <div id="game-container" className="absolute inset-0 z-0" />
+      )}
+
+      {/* 3D R3F canvas */}
+      {renderMode === '3d' && (
+        <GameCanvas3D
+          ref={game3dRef}
+          gameplayActive={game3dGameplayActive}
+          onStateUpdate={applyGameStateUpdate}
+        />
+      )}
       
       {/* Intro Gate: subtle tap-to-begin screen before main menu */}
       {isLoaded && gameStatus === 'intro_gate' && (
@@ -539,6 +676,19 @@ function App() {
         </div>
       )}
       
+      {/* 3D: tap to start running during Nur welcome */}
+      {isLoaded && renderMode === '3d' && gameStatus === 'playing' && gameState.noorMessage?.isSoftPause && (
+        <div className="absolute inset-0 z-30 flex items-end justify-center pb-32 pointer-events-none">
+          <button
+            type="button"
+            onClick={() => game3dRef.current?.dismissMessage()}
+            className="pointer-events-auto px-8 py-4 rounded-full bg-amber-400 hover:bg-amber-300 text-slate-900 font-bold text-lg shadow-lg shadow-amber-500/50 animate-pulse"
+          >
+            اضغط للانطلاق
+          </button>
+        </div>
+      )}
+
       {/* 5. Gameplay UI Overlay */}
       {isLoaded && gameStatus === 'playing' && (
         <>
